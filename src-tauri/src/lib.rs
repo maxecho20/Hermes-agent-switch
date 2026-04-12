@@ -542,8 +542,20 @@ fn get_terminal_config() -> Result<TerminalConfig, String> {
         cwd: terminal
             .and_then(|t| t.get("cwd"))
             .and_then(|v| v.as_str())
-            .unwrap_or(".")
-            .to_string(),
+            .map(|s| {
+                if s == "." {
+                    dirs::home_dir()
+                        .map(|h| h.to_string_lossy().to_string())
+                        .unwrap_or_else(|| ".".to_string())
+                } else {
+                    s.to_string()
+                }
+            })
+            .unwrap_or_else(|| {
+                dirs::home_dir()
+                    .map(|h| h.to_string_lossy().to_string())
+                    .unwrap_or_else(|| ".".to_string())
+            }),
         timeout: terminal
             .and_then(|t| t.get("timeout"))
             .and_then(|v| v.as_u64())
