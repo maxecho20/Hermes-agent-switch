@@ -46,6 +46,19 @@ export interface ProviderSwitchRequest {
   api_key: string;
 }
 
+export interface SavedProfile {
+  id: string;
+  name: string;
+  provider_type: string;
+  model: string;
+  base_url: string;
+  api_key: string;
+  icon_letter: string;
+  color: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface McpServerConfig {
   name: string;
   server_type: string;
@@ -103,6 +116,19 @@ export const api = {
 
   switchProvider: (request: ProviderSwitchRequest) =>
     invoke<string>('switch_provider', { request }),
+
+  // Profile management
+  saveProfile: (profile: SavedProfile) =>
+    invoke<string>('save_profile', { profile }),
+
+  getSavedProfiles: () =>
+    invoke<SavedProfile[]>('get_saved_profiles'),
+
+  deleteProfile: (profileId: string) =>
+    invoke<string>('delete_profile', { profileId }),
+
+  switchToProfile: (profileId: string) =>
+    invoke<string>('switch_to_profile', { profileId }),
 
   getTerminalConfig: () =>
     invoke<TerminalConfig>('get_terminal_config'),

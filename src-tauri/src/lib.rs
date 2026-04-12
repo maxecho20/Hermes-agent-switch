@@ -53,6 +53,21 @@ pub struct ProviderSwitchRequest {
     pub api_key: String,
 }
 
+/// A saved provider profile that persists between switches
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedProfile {
+    pub id: String,
+    pub name: String,
+    pub provider_type: String,
+    pub model: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub icon_letter: String,
+    pub color: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvVariable {
     pub key: String,
@@ -194,6 +209,32 @@ fn backup_file(path: &PathBuf) -> Result<(), String> {
     std::fs::copy(path, &backup_path)
         .map_err(|e| format!("Failed to create backup: {}", e))?;
     Ok(())
+}
+
+fn get_profiles_path() -> Result<PathBuf, String> {
+    let config_dir =
+        get_hermes_config_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let switch_dir = config_dir.join("hermes-switch");
+    std::fs::create_dir_all(&switch_dir)
+        .map_err(|e| format!("Failed to create hermes-switch dir: {}", e))?;
+    Ok(switch_dir.join("profiles.json"))
+}
+
+fn load_profiles() -> Result<Vec<SavedProfile>, String> {
+    let path = get_profiles_path()?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read profiles: {}", e))?;
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse profiles: {}", e))
+}
+
+fn persist_profiles(profiles: &[SavedProfile]) -> Result<(), String> {
+    let path = get_profiles_path()?;
+    let content = serde_json::to_string_pretty(profiles)
+        .map_err(|e| format!("Failed to serialize profiles: {}", e))?;
+    atomic_write(&path, &content)
 }
 
 // ============================================================================
@@ -362,14 +403,25 @@ fn get_provider_presets() -> Vec<ProviderPreset> {
         },
         ProviderPreset {
             id: "zai".into(),
-            name: "z.ai / GLM".into(),
-            provider_type: "zai".into(),
-            default_model: "glm-4-plus".into(),
-            default_base_url: "https://api.z.ai/api/paas/v4".into(),
-            env_key: "GLM_API_KEY".into(),
-            description: "智谱 AI GLM 系列模型".into(),
+            name: "智谱 GLM".into(),
+            provider_type: "custom".into(),
+            default_model: "glm-4.7".into(),
+            default_base_url: "https://open.bigmodel.cn/api/paas/v4/".into(),
+            env_key: "ZAI_API_KEY".into(),
+            description: "智谱 AI GLM 系列模型 (中国端)".into(),
             icon_letter: "Z".into(),
             color: "#00d4aa".into(),
+        },
+        ProviderPreset {
+            id: "deepseek".into(),
+            name: "DeepSeek".into(),
+            provider_type: "custom".into(),
+            default_model: "deepseek-chat".into(),
+            default_base_url: "https://api.deepseek.com/v1".into(),
+            env_key: "DEEPSEEK_API_KEY".into(),
+            description: "DeepSeek 深度求索".into(),
+            icon_letter: "D".into(),
+            color: "#4f46e5".into(),
         },
         ProviderPreset {
             id: "kimi".into(),
@@ -452,22 +504,20 @@ fn get_provider_presets() -> Vec<ProviderPreset> {
 }
 
 /// Switch to a different provider (writes config.yaml and optionally .env)
+/// Also auto-saves current config as a profile before switching
 #[tauri::command]
 fn switch_provider(request: ProviderSwitchRequest) -> Result<String, String> {
     let config_dir =
         get_hermes_config_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
 
-    // Determine config file path
     let config_path = if config_dir.join("config.yaml").exists() {
         config_dir.join("config.yaml")
     } else {
-        config_dir.join("config.yaml") // Create new if none exists
+        config_dir.join("config.yaml")
     };
 
     // Backup current config
     backup_file(&config_path)?;
-    let env_path = config_dir.join(".env");
-    backup_file(&env_path)?;
 
     // Read current config or create minimal one
     let content = if config_path.exists() {
@@ -483,7 +533,14 @@ fn switch_provider(request: ProviderSwitchRequest) -> Result<String, String> {
         serde_yaml::from_str(&content).map_err(|e| format!("Failed to parse YAML: {}", e))?
     };
 
-    // Update model section
+    // Build new model section, preserving existing keys if not provided
+    let old_model = yaml.get("model");
+    let old_api_key = old_model
+        .and_then(|m| m.get("api_key"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
     let model_map = {
         let mut m = serde_yaml::Mapping::new();
         m.insert(
@@ -500,10 +557,16 @@ fn switch_provider(request: ProviderSwitchRequest) -> Result<String, String> {
                 serde_yaml::Value::String(request.base_url.clone()),
             );
         }
-        if !request.api_key.is_empty() {
+        // Use new api_key if provided, otherwise keep old one
+        let effective_key = if !request.api_key.is_empty() {
+            request.api_key.clone()
+        } else {
+            old_api_key
+        };
+        if !effective_key.is_empty() {
             m.insert(
                 serde_yaml::Value::String("api_key".into()),
-                serde_yaml::Value::String(request.api_key.clone()),
+                serde_yaml::Value::String(effective_key),
             );
         }
         m
@@ -525,6 +588,83 @@ fn switch_provider(request: ProviderSwitchRequest) -> Result<String, String> {
         "Switched to {} ({})",
         request.provider_type, request.model
     ))
+}
+
+// ============================================================================
+// Profile Management Commands
+// ============================================================================
+
+/// Save a provider profile for later reuse
+#[tauri::command]
+fn save_profile(profile: SavedProfile) -> Result<String, String> {
+    let mut profiles = load_profiles()?;
+    let now = chrono::Local::now().to_rfc3339();
+
+    // Update existing or add new
+    if let Some(existing) = profiles.iter_mut().find(|p| p.id == profile.id) {
+        existing.name = profile.name.clone();
+        existing.provider_type = profile.provider_type;
+        existing.model = profile.model;
+        existing.base_url = profile.base_url;
+        existing.api_key = profile.api_key;
+        existing.icon_letter = profile.icon_letter;
+        existing.color = profile.color;
+        existing.updated_at = now;
+    } else {
+        let mut new_profile = profile.clone();
+        if new_profile.id.is_empty() {
+            new_profile.id = uuid::Uuid::new_v4().to_string();
+        }
+        new_profile.created_at = now.clone();
+        new_profile.updated_at = now;
+        profiles.push(new_profile);
+    }
+
+    persist_profiles(&profiles)?;
+    Ok(format!("Profile '{}' saved", profile.name))
+}
+
+/// List all saved profiles
+#[tauri::command]
+fn get_saved_profiles() -> Result<Vec<SavedProfile>, String> {
+    let mut profiles = load_profiles()?;
+    // Mask API keys for display
+    for p in &mut profiles {
+        p.api_key = mask_api_key(&p.api_key);
+    }
+    Ok(profiles)
+}
+
+/// Delete a saved profile
+#[tauri::command]
+fn delete_profile(profile_id: String) -> Result<String, String> {
+    let mut profiles = load_profiles()?;
+    let before_len = profiles.len();
+    profiles.retain(|p| p.id != profile_id);
+    if profiles.len() == before_len {
+        return Err(format!("Profile {} not found", profile_id));
+    }
+    persist_profiles(&profiles)?;
+    Ok("Profile deleted".into())
+}
+
+/// Switch to a saved profile (loads its full config)
+#[tauri::command]
+fn switch_to_profile(profile_id: String) -> Result<String, String> {
+    let profiles = load_profiles()?;
+    let profile = profiles
+        .iter()
+        .find(|p| p.id == profile_id)
+        .ok_or_else(|| format!("Profile {} not found", profile_id))?;
+
+    let request = ProviderSwitchRequest {
+        provider_type: profile.provider_type.clone(),
+        model: profile.model.clone(),
+        base_url: profile.base_url.clone(),
+        api_key: profile.api_key.clone(),
+    };
+
+    switch_provider(request)
 }
 
 /// Read terminal backend configuration
@@ -811,6 +951,10 @@ pub fn run() {
             get_configured_api_keys,
             get_provider_presets,
             switch_provider,
+            save_profile,
+            get_saved_profiles,
+            delete_profile,
+            switch_to_profile,
             get_terminal_config,
             get_mcp_servers,
             get_memory_content,
