@@ -174,10 +174,6 @@ export function SettingsPage() {
               <span className="text-muted-foreground">技术栈</span>
               <span className="text-foreground">Tauri 2 + React + Rust</span>
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">灵感来源</span>
-              <span className="text-foreground">CC Switch</span>
-            </div>
           </div>
         </div>
       </div>
