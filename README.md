@@ -62,16 +62,18 @@ Hermes Agent Switch 是一个跨平台桌面应用，专门用于为 [Hermes Age
 
 ---
 
-## 📦 打包发布 (构建生产版)
+## 📥 下载与安装
 
-当需要将 Hermes Agent Switch 构建为独立的 `.app` 或 `.exe` 时请执行：
+本项目已配置强大的跨平台自动打包工作流（支持 **Windows**, **macOS**, **Linux**），无需手动配置开发环境，您可以直接下载开箱即用的安装包：
 
-```bash
-# 推荐先清理一次旧的构建缓存
-pnpm tauri build
-```
+1. 访问我们项目的 [Releases 页面](https://github.com/maxecho20/Hermes-agent-switch/releases)
+2. 根据您的操作系统系统下载对应的安装包：
+   - **macOS**: 下载 `.dmg` 或 `.app` 结尾的文件（通常区分 Intel x64 与 Apple Silicon aarch64）
+   - **Windows**: 下载 `.exe` 或 `.msi` 结尾的安装程序
+   - **Linux**: 下载 `.AppImage` 或 `.deb` 结尾的文件
+3. 下载后双击即可安装运行
 
-构建产物将放置在 `src-tauri/target/release/bundle/` 中。
+*对于开发者进阶：您依然可以通过 `pnpm tauri dev` 启动本地开发服务器，或通过 `pnpm tauri build` 自行构建生产版本。*
 
 ---
 
