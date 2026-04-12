@@ -288,6 +288,7 @@ fn get_configured_api_keys() -> Result<Vec<ApiKeyInfo>, String> {
         ("GOOGLE_API_KEY", "Google AI Studio"),
         ("GEMINI_API_KEY", "Gemini"),
         ("GLM_API_KEY", "z.ai / GLM"),
+        ("ZAI_API_KEY", "z.ai / GLM"),
         ("KIMI_API_KEY", "Kimi / Moonshot"),
         ("MINIMAX_API_KEY", "MiniMax"),
         ("MINIMAX_CN_API_KEY", "MiniMax CN"),
@@ -297,6 +298,13 @@ fn get_configured_api_keys() -> Result<Vec<ApiKeyInfo>, String> {
         ("XIAOMI_API_KEY", "Xiaomi MiMo"),
         ("ANTHROPIC_API_KEY", "Anthropic"),
         ("NOUS_API_KEY", "Nous Portal"),
+        // Platform / Gateway keys
+        ("FEISHU_APP_ID", "飞书 (Feishu)"),
+        ("FEISHU_APP_SECRET", "飞书 Secret"),
+        ("TELEGRAM_BOT_TOKEN", "Telegram Bot"),
+        ("WEIXIN_BOT_TOKEN", "微信 Bot"),
+        ("WEIXIN_ACCOUNT_ID", "微信 Account"),
+        ("BLUEBUBBLES_SERVER_URL", "BlueBubbles"),
     ];
 
     let mut keys = Vec::new();
