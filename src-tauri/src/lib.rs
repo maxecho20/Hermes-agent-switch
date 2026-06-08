@@ -138,8 +138,50 @@ pub struct FullConfig {
 // Helper Functions
 // ============================================================================
 
+#[cfg(target_os = "windows")]
+fn get_wsl_home_dir() -> Result<PathBuf, String> {
+    let output = std::process::Command::new("wsl")
+        .args(["-e", "sh", "-c", "echo ~"])
+        .output()
+        .map_err(|e| format!("Failed to run WSL: {}", e))?;
+
+    if !output.status.success() {
+        return Err("WSL is not enabled or default distro is not set up".to_string());
+    }
+
+    let wsl_home = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if wsl_home.is_empty() {
+        return Err("WSL returned an empty home directory".to_string());
+    }
+
+    let distro_output = std::process::Command::new("wsl")
+        .args(["-e", "sh", "-c", "echo $WSL_DISTRO_NAME"])
+        .output()
+        .map_err(|e| format!("Failed to get WSL distro name: {}", e))?;
+
+    let distro_name = String::from_utf8_lossy(&distro_output.stdout).trim().to_string();
+    let distro = if distro_name.is_empty() {
+        "Ubuntu".to_string()
+    } else {
+        distro_name
+    };
+
+    let clean_wsl_home = wsl_home.replace("/", "\\");
+    let unc_prefix = format!("\\\\wsl.localhost\\{}\\", distro);
+    let full_path = format!("{}{}", unc_prefix, clean_wsl_home.trim_start_matches('\\'));
+
+    Ok(PathBuf::from(full_path))
+}
+
 fn get_hermes_config_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join(".hermes"))
+    #[cfg(target_os = "windows")]
+    {
+        get_wsl_home_dir().ok().map(|h| h.join(".hermes"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        dirs::home_dir().map(|home| home.join(".hermes"))
+    }
 }
 
 fn read_hermes_config() -> Result<serde_yaml::Value, String> {
@@ -260,55 +302,99 @@ fn persist_profiles(profiles: &[SavedProfile]) -> Result<(), String> {
 
 /// Detect hermes CLI: checks common PATH locations and returns version string if found
 fn detect_hermes_cli() -> HermesCLIStatus {
-    // Common install locations for hermes command
-    let candidate_paths = vec![
-        dirs::home_dir().map(|h| h.join(".local").join("bin").join("hermes")),
-        dirs::home_dir().map(|h| h.join(".cargo").join("bin").join("hermes")),
-        Some(std::path::PathBuf::from("/usr/local/bin/hermes")),
-        Some(std::path::PathBuf::from("/usr/bin/hermes")),
-        Some(std::path::PathBuf::from("/opt/homebrew/bin/hermes")),
-    ];
+    #[cfg(target_os = "windows")]
+    {
+        let which_output = std::process::Command::new("wsl")
+            .args(["-e", "sh", "-c", "command -v hermes"])
+            .output();
 
-    // Also try PATH-based lookup via `which hermes`
-    let hermes_from_path = std::process::Command::new("sh")
-        .args(["-c", "command -v hermes"])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                if !p.is_empty() { Some(std::path::PathBuf::from(p)) } else { None }
-            } else { None }
-        });
+        let path = match which_output {
+            Ok(out) if out.status.success() => {
+                let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if p.is_empty() { None } else { Some(p) }
+            }
+            _ => None,
+        };
 
-    let found_path = hermes_from_path.or_else(|| {
-        candidate_paths.into_iter().flatten().find(|p| p.exists())
-    });
+        if let Some(hermes_path) = path {
+            let version_output = std::process::Command::new("wsl")
+                .args(["-e", "hermes", "--version"])
+                .output();
 
-    match found_path {
-        Some(path) => {
-            // Try to get version
-            let version = std::process::Command::new(&path)
-                .arg("--version")
-                .output()
-                .ok()
-                .and_then(|o| {
-                    let out = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                    let err = String::from_utf8_lossy(&o.stderr).trim().to_string();
-                    let combined = if out.is_empty() { err } else { out };
-                    if combined.is_empty() { None } else { Some(combined) }
-                });
+            let version = match version_output {
+                Ok(out) if out.status.success() => {
+                    let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if v.is_empty() { None } else { Some(v) }
+                }
+                _ => None,
+            };
+
             HermesCLIStatus {
                 available: true,
                 version,
-                path: Some(path.to_string_lossy().to_string()),
+                path: Some(hermes_path),
+            }
+        } else {
+            HermesCLIStatus {
+                available: false,
+                version: None,
+                path: None,
             }
         }
-        None => HermesCLIStatus {
-            available: false,
-            version: None,
-            path: None,
-        },
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Common install locations for hermes command
+        let candidate_paths = vec![
+            dirs::home_dir().map(|h| h.join(".local").join("bin").join("hermes")),
+            dirs::home_dir().map(|h| h.join(".cargo").join("bin").join("hermes")),
+            Some(std::path::PathBuf::from("/usr/local/bin/hermes")),
+            Some(std::path::PathBuf::from("/usr/bin/hermes")),
+            Some(std::path::PathBuf::from("/opt/homebrew/bin/hermes")),
+        ];
+
+        // Also try PATH-based lookup via `which hermes`
+        let hermes_from_path = std::process::Command::new("sh")
+            .args(["-c", "command -v hermes"])
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    if !p.is_empty() { Some(std::path::PathBuf::from(p)) } else { None }
+                } else { None }
+            });
+
+        let found_path = hermes_from_path.or_else(|| {
+            candidate_paths.into_iter().flatten().find(|p| p.exists())
+        });
+
+        match found_path {
+            Some(path) => {
+                // Try to get version
+                let version = std::process::Command::new(&path)
+                    .arg("--version")
+                    .output()
+                    .ok()
+                    .and_then(|o| {
+                        let out = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                        let err = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                        let combined = if out.is_empty() { err } else { out };
+                        if combined.is_empty() { None } else { Some(combined) }
+                    });
+                HermesCLIStatus {
+                    available: true,
+                    version,
+                    path: Some(path.to_string_lossy().to_string()),
+                }
+            }
+            None => HermesCLIStatus {
+                available: false,
+                version: None,
+                path: None,
+            },
+        }
     }
 }
 
@@ -339,17 +425,24 @@ fn check_hermes_installation() -> Result<HermesStatus, String> {
                 cli_version: cli_status.version,
             })
         }
-        None => Ok(HermesStatus {
-            installed: false,
-            config_dir: String::new(),
-            has_config: false,
-            has_env: false,
-            has_skills: false,
-            has_memory: false,
-            has_sessions: false,
-            cli_available: false,
-            cli_version: None,
-        }),
+        None => {
+            #[cfg(target_os = "windows")]
+            let config_dir_str = "WSL_NOT_FOUND".to_string();
+            #[cfg(not(target_os = "windows"))]
+            let config_dir_str = String::new();
+
+            Ok(HermesStatus {
+                installed: false,
+                config_dir: config_dir_str,
+                has_config: false,
+                has_env: false,
+                has_skills: false,
+                has_memory: false,
+                has_sessions: false,
+                cli_available: false,
+                cli_version: None,
+            })
+        }
     }
 }
 
@@ -387,14 +480,21 @@ async fn install_hermes_agent(app: tauri::AppHandle) -> Result<String, String> {
     emit_progress(&app, "start", "正在启动 Hermes Agent 安装程序...", false, false);
 
     // Run the official install script via shell
-    let install_cmd = "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash";
+    #[cfg(target_os = "windows")]
+    let (cmd_bin, cmd_args) = ("wsl", vec!["sh", "-c", "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash"]);
+    #[cfg(not(target_os = "windows"))]
+    let (cmd_bin, cmd_args) = ("bash", vec!["-c", "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash"]);
 
     emit_progress(&app, "download", "正在下载安装脚本...", false, false);
 
-    let output = std::process::Command::new("bash")
-        .args(["-c", install_cmd])
-        .env("HOME", dirs::home_dir().unwrap_or_default())
-        .output()
+    let mut command = std::process::Command::new(cmd_bin);
+    command.args(&cmd_args);
+    #[cfg(not(target_os = "windows"))]
+    {
+        command.env("HOME", dirs::home_dir().unwrap_or_default());
+    }
+
+    let output = command.output()
         .map_err(|e| format!("Failed to run install script: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
