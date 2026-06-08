@@ -5,7 +5,7 @@ import { api, type HermesStatus, type HermesCLIStatus } from '../../lib/api';
 export function SettingsPage() {
   const [hermesStatus, setHermesStatus] = useState<HermesStatus | null>(null);
   const [cliStatus, setCliStatus] = useState<HermesCLIStatus | null>(null);
-  const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('light');
   const [language, setLanguage] = useState<'zh' | 'en'>('zh');
   const [loading, setLoading] = useState(true);
 
@@ -25,10 +25,15 @@ export function SettingsPage() {
     }
   };
 
-  useEffect(() => { loadStatus(); }, []);
+  useEffect(() => {
+    const savedTheme = (localStorage.getItem('theme') as 'dark' | 'light' | 'system') || 'light';
+    setTheme(savedTheme);
+    loadStatus();
+  }, []);
 
   const handleThemeChange = (newTheme: 'dark' | 'light' | 'system') => {
     setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
     const isDark = newTheme === 'dark' || (newTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     document.documentElement.classList.toggle('dark', isDark);
   };

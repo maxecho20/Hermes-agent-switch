@@ -30,9 +30,11 @@ function App() {
   const [screen, setScreen] = useState<AppScreen>('loading');
   const [activePage, setActivePage] = useState<NavPage>('providers');
 
-  // Apply dark mode on mount
+  // Apply theme on mount (default to light)
   useEffect(() => {
-    document.documentElement.classList.add('dark');
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    const isDark = savedTheme === 'dark' || (savedTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.classList.toggle('dark', isDark);
   }, []);
 
   // On mount: detect hermes installation state
