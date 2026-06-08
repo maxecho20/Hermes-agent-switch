@@ -15,6 +15,23 @@ pub struct HermesStatus {
     pub has_skills: bool,
     pub has_memory: bool,
     pub has_sessions: bool,
+    pub cli_available: bool,
+    pub cli_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HermesCLIStatus {
+    pub available: bool,
+    pub version: Option<String>,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstallProgress {
+    pub step: String,
+    pub message: String,
+    pub done: bool,
+    pub success: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,10 +258,65 @@ fn persist_profiles(profiles: &[SavedProfile]) -> Result<(), String> {
 // Tauri Commands
 // ============================================================================
 
+/// Detect hermes CLI: checks common PATH locations and returns version string if found
+fn detect_hermes_cli() -> HermesCLIStatus {
+    // Common install locations for hermes command
+    let candidate_paths = vec![
+        dirs::home_dir().map(|h| h.join(".local").join("bin").join("hermes")),
+        dirs::home_dir().map(|h| h.join(".cargo").join("bin").join("hermes")),
+        Some(std::path::PathBuf::from("/usr/local/bin/hermes")),
+        Some(std::path::PathBuf::from("/usr/bin/hermes")),
+        Some(std::path::PathBuf::from("/opt/homebrew/bin/hermes")),
+    ];
+
+    // Also try PATH-based lookup via `which hermes`
+    let hermes_from_path = std::process::Command::new("sh")
+        .args(["-c", "command -v hermes"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if !p.is_empty() { Some(std::path::PathBuf::from(p)) } else { None }
+            } else { None }
+        });
+
+    let found_path = hermes_from_path.or_else(|| {
+        candidate_paths.into_iter().flatten().find(|p| p.exists())
+    });
+
+    match found_path {
+        Some(path) => {
+            // Try to get version
+            let version = std::process::Command::new(&path)
+                .arg("--version")
+                .output()
+                .ok()
+                .and_then(|o| {
+                    let out = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    let err = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                    let combined = if out.is_empty() { err } else { out };
+                    if combined.is_empty() { None } else { Some(combined) }
+                });
+            HermesCLIStatus {
+                available: true,
+                version,
+                path: Some(path.to_string_lossy().to_string()),
+            }
+        }
+        None => HermesCLIStatus {
+            available: false,
+            version: None,
+            path: None,
+        },
+    }
+}
+
 /// Check if Hermes Agent is installed and detect configuration
 #[tauri::command]
 fn check_hermes_installation() -> Result<HermesStatus, String> {
     let config_dir = get_hermes_config_dir();
+    let cli_status = detect_hermes_cli();
 
     match config_dir {
         Some(dir) => {
@@ -256,13 +328,15 @@ fn check_hermes_installation() -> Result<HermesStatus, String> {
             let has_sessions = dir.join("sessions").exists();
 
             Ok(HermesStatus {
-                installed: has_config || has_env,
+                installed: cli_status.available || has_config || has_env,
                 config_dir: dir.to_string_lossy().to_string(),
                 has_config,
                 has_env,
                 has_skills,
                 has_memory,
                 has_sessions,
+                cli_available: cli_status.available,
+                cli_version: cli_status.version,
             })
         }
         None => Ok(HermesStatus {
@@ -273,7 +347,66 @@ fn check_hermes_installation() -> Result<HermesStatus, String> {
             has_skills: false,
             has_memory: false,
             has_sessions: false,
+            cli_available: false,
+            cli_version: None,
         }),
+    }
+}
+
+/// Check if hermes CLI is available and return status
+#[tauri::command]
+fn check_hermes_cli() -> HermesCLIStatus {
+    detect_hermes_cli()
+}
+
+/// Get hermes version string (runs hermes --version)
+#[tauri::command]
+fn get_hermes_version() -> Result<String, String> {
+    let status = detect_hermes_cli();
+    if !status.available {
+        return Err("hermes CLI not found. Please install Hermes Agent first.".into());
+    }
+    status.version.ok_or_else(|| "Failed to get hermes version".into())
+}
+
+/// Install Hermes Agent using the official curl installer
+/// Streams output lines back via Tauri events
+#[tauri::command]
+async fn install_hermes_agent(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri::Emitter;
+
+    let emit_progress = |app: &tauri::AppHandle, step: &str, message: &str, done: bool, success: bool| {
+        let _ = app.emit("install-progress", InstallProgress {
+            step: step.into(),
+            message: message.into(),
+            done,
+            success,
+        });
+    };
+
+    emit_progress(&app, "start", "正在启动 Hermes Agent 安装程序...", false, false);
+
+    // Run the official install script via shell
+    let install_cmd = "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash";
+
+    emit_progress(&app, "download", "正在下载安装脚本...", false, false);
+
+    let output = std::process::Command::new("bash")
+        .args(["-c", install_cmd])
+        .env("HOME", dirs::home_dir().unwrap_or_default())
+        .output()
+        .map_err(|e| format!("Failed to run install script: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr);
+
+    if output.status.success() || detect_hermes_cli().available {
+        emit_progress(&app, "done", "Hermes Agent 安装成功！", true, true);
+        Ok(combined)
+    } else {
+        emit_progress(&app, "error", &format!("安装失败：{}", combined), true, false);
+        Err(combined)
     }
 }
 
@@ -364,7 +497,7 @@ fn get_configured_api_keys() -> Result<Vec<ApiKeyInfo>, String> {
     Ok(keys)
 }
 
-/// Get list of built-in provider presets
+/// Get list of built-in provider presets (updated for Hermes Agent v0.15.1+)
 #[tauri::command]
 fn get_provider_presets() -> Vec<ProviderPreset> {
     vec![
@@ -372,10 +505,10 @@ fn get_provider_presets() -> Vec<ProviderPreset> {
             id: "openrouter".into(),
             name: "OpenRouter".into(),
             provider_type: "openrouter".into(),
-            default_model: "anthropic/claude-opus-4.6".into(),
+            default_model: "anthropic/claude-opus-4-5".into(),
             default_base_url: "https://openrouter.ai/api/v1".into(),
             env_key: "OPENROUTER_API_KEY".into(),
-            description: "通过一个 API 访问多种模型".into(),
+            description: "通过一个 API 访问 200+ 模型".into(),
             icon_letter: "O".into(),
             color: "#6366f1".into(),
         },
@@ -383,7 +516,7 @@ fn get_provider_presets() -> Vec<ProviderPreset> {
             id: "anthropic".into(),
             name: "Anthropic".into(),
             provider_type: "anthropic".into(),
-            default_model: "claude-opus-4.6".into(),
+            default_model: "claude-opus-4-5".into(),
             default_base_url: "https://api.anthropic.com/v1".into(),
             env_key: "ANTHROPIC_API_KEY".into(),
             description: "直连 Anthropic Claude API".into(),
@@ -394,7 +527,7 @@ fn get_provider_presets() -> Vec<ProviderPreset> {
             id: "gemini".into(),
             name: "Google Gemini".into(),
             provider_type: "gemini".into(),
-            default_model: "gemini-3-flash-preview".into(),
+            default_model: "gemini-2.5-flash".into(),
             default_base_url: "https://generativelanguage.googleapis.com/v1beta/openai".into(),
             env_key: "GOOGLE_API_KEY".into(),
             description: "Google AI Studio 原生 Gemini API".into(),
@@ -405,7 +538,7 @@ fn get_provider_presets() -> Vec<ProviderPreset> {
             id: "zai-cn".into(),
             name: "智谱 GLM (中国端)".into(),
             provider_type: "custom".into(),
-            default_model: "glm-4.7".into(),
+            default_model: "glm-4-plus".into(),
             default_base_url: "https://open.bigmodel.cn/api/paas/v4/".into(),
             env_key: "ZAI_API_KEY".into(),
             description: "中国大陆节点，国内用户推荐".into(),
@@ -416,7 +549,7 @@ fn get_provider_presets() -> Vec<ProviderPreset> {
             id: "zai-global".into(),
             name: "智谱 GLM (国际端)".into(),
             provider_type: "custom".into(),
-            default_model: "glm-4.7".into(),
+            default_model: "glm-4-plus".into(),
             default_base_url: "https://api.z.ai/api/paas/v4".into(),
             env_key: "ZAI_API_KEY".into(),
             description: "国际节点 (z.ai)，海外用户可尝试".into(),
@@ -449,10 +582,10 @@ fn get_provider_presets() -> Vec<ProviderPreset> {
             id: "minimax".into(),
             name: "MiniMax".into(),
             provider_type: "minimax".into(),
-            default_model: "minimax-m2.7".into(),
+            default_model: "MiniMax-M3".into(),
             default_base_url: "https://api.minimax.io/v1".into(),
             env_key: "MINIMAX_API_KEY".into(),
-            description: "MiniMax 全球端点".into(),
+            description: "MiniMax 全球端点（1M 超长上下文）".into(),
             icon_letter: "M".into(),
             color: "#a855f7".into(),
         },
@@ -460,12 +593,34 @@ fn get_provider_presets() -> Vec<ProviderPreset> {
             id: "minimax-cn".into(),
             name: "MiniMax 中国".into(),
             provider_type: "minimax-cn".into(),
-            default_model: "minimax-m2.7".into(),
+            default_model: "MiniMax-M3".into(),
             default_base_url: "https://api.minimaxi.com/v1".into(),
             env_key: "MINIMAX_CN_API_KEY".into(),
             description: "MiniMax 中国端点".into(),
             icon_letter: "M".into(),
             color: "#a855f7".into(),
+        },
+        ProviderPreset {
+            id: "mistral".into(),
+            name: "Mistral AI".into(),
+            provider_type: "mistral".into(),
+            default_model: "mistral-large-latest".into(),
+            default_base_url: "https://api.mistral.ai/v1".into(),
+            env_key: "MISTRAL_API_KEY".into(),
+            description: "Mistral 欧洲顶级开源大模型".into(),
+            icon_letter: "M".into(),
+            color: "#ff7000".into(),
+        },
+        ProviderPreset {
+            id: "bedrock".into(),
+            name: "AWS Bedrock".into(),
+            provider_type: "bedrock".into(),
+            default_model: "anthropic.claude-opus-4-5-20251101-v1:0".into(),
+            default_base_url: "".into(),
+            env_key: "AWS_ACCESS_KEY_ID".into(),
+            description: "Amazon Bedrock 托管模型服务".into(),
+            icon_letter: "B".into(),
+            color: "#ff9900".into(),
         },
         ProviderPreset {
             id: "huggingface".into(),
@@ -958,6 +1113,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             check_hermes_installation,
+            check_hermes_cli,
+            get_hermes_version,
+            install_hermes_agent,
             get_current_model,
             get_configured_api_keys,
             get_provider_presets,

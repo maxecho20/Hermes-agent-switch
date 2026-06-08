@@ -62,18 +62,49 @@ Hermes Agent Switch 是一个跨平台桌面应用，专门用于为 [Hermes Age
 
 ---
 
-## 📥 下载与安装
+## 📥 下载与使用指南 (免终端配置)
 
-本项目已配置强大的跨平台自动打包工作流（支持 **Windows**, **macOS**, **Linux**），无需手动配置开发环境，您可以直接下载开箱即用的安装包：
+为了做到真正“开箱即用”，普通用户无需在终端输入任何代码。以下是下载与使用方法：
 
-1. 访问我们项目的 [Releases 页面](https://github.com/maxecho20/Hermes-agent-switch/releases)
-2. 根据您的操作系统系统下载对应的安装包：
-   - **macOS**: 下载 `.dmg` 或 `.app` 结尾的文件（通常区分 Intel x64 与 Apple Silicon aarch64）
-   - **Windows**: 下载 `.exe` 或 `.msi` 结尾的安装程序
-   - **Linux**: 下载 `.AppImage` 或 `.deb` 结尾的文件
-3. 下载后双击即可安装运行
+### 1. 下载程序
+1. 访问本项目的 [Releases 页面](https://github.com/NousResearch/hermes-agent)（或者当前部署的发布页）。
+2. 下载适配您操作系统的版本：
+   - **macOS**: 下载 `.dmg` 包（支持 Apple Silicon 与 Intel 芯片的通用版本）。
+   - **Windows & Linux**: 支持计划已列入备忘录，暂以 macOS 为主。
 
-*对于开发者进阶：您依然可以通过 `pnpm tauri dev` 启动本地开发服务器，或通过 `pnpm tauri build` 自行构建生产版本。*
+### 2. 双击启动与安装引导
+1. **对于 macOS 用户**：因为暂无 Apple Developer 证书签名，双击 `.app` 可能会弹出“无法打开，因为无法验证开发者”的 Gatekeeper 警告。
+   * **解决方法**：在 `.app` 或 `.dmg` 挂载后的图标上 **右键点击 -> 选择「打开」**，然后在弹出的确认框中再次点击 **「打开」** 即可。此操作仅需在首次启动时进行一次。
+2. **检测与一键安装**：
+   - 打开程序后，系统会自动检测您的电脑上是否已安装过底层 `hermes` CLI 工具。
+   - 若未安装，应用将自动展示 **Onboarding 欢迎引导页**。点击「**一键安装 Hermes Agent**」按钮，应用会在后台自动拉取官方安装脚本并显示实时日志窗口。
+3. **快速配置向导 (Setup Wizard)**：
+   - 安装完成后，向导会带您选择首选的 AI Provider (如 OpenRouter, Gemini, Anthropic 或 Nous Portal) 并配置您的 API Key。
+   - 点击保存后，您即可直接进入 HermesSwitch 控制台，同时系统底层的 `hermes` 命令行也已完全配置就绪。
+
+---
+
+## 🛠️ 开发者本地调试与运行
+
+如果您想对本项目进行二次开发或从源码构建：
+
+### 1. 克隆并进入目录
+```bash
+git clone <repository-url>
+cd HermesSwitch
+```
+
+### 2. 启动开发服务器 (Tauri Dev)
+```bash
+npx tauri dev
+```
+*注意：如果偶尔遇到端口（1420）被占用的情况，可以运行 `lsof -ti :1420 | xargs kill -9` 终止残留进程，然后重新启动。*
+
+### 3. 本地构建打包
+```bash
+npx tauri build
+```
+构建成功后，生成的通用 `.app` 或 `.dmg` 将输出在 `src-tauri/target/release/bundle/` 下。
 
 ---
 

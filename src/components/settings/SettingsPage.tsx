@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Settings, Moon, Sun, Monitor, Globe, RefreshCw, FolderOpen, CheckCircle2 } from 'lucide-react';
-import { api, type HermesStatus } from '../../lib/api';
+import { Moon, Sun, Monitor, RefreshCw, FolderOpen, CheckCircle2, Terminal, Tag } from 'lucide-react';
+import { api, type HermesStatus, type HermesCLIStatus } from '../../lib/api';
 
 export function SettingsPage() {
   const [hermesStatus, setHermesStatus] = useState<HermesStatus | null>(null);
+  const [cliStatus, setCliStatus] = useState<HermesCLIStatus | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('dark');
   const [language, setLanguage] = useState<'zh' | 'en'>('zh');
   const [loading, setLoading] = useState(true);
@@ -11,8 +12,12 @@ export function SettingsPage() {
   const loadStatus = async () => {
     setLoading(true);
     try {
-      const status = await api.checkHermesInstallation();
+      const [status, cli] = await Promise.all([
+        api.checkHermesInstallation(),
+        api.checkHermesCli().catch(() => null),
+      ]);
       setHermesStatus(status);
+      setCliStatus(cli);
     } catch (err) {
       console.error('Failed to load status:', err);
     } finally {
@@ -72,6 +77,26 @@ export function SettingsPage() {
                     <span className="text-muted-foreground">配置目录</span>
                     <code className="ml-auto font-mono text-xs text-foreground">{hermesStatus.config_dir}</code>
                   </div>
+
+                  {/* CLI Version */}
+                  {(cliStatus?.available || hermesStatus.cli_available) && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Terminal className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">CLI 路径</span>
+                      <code className="ml-auto font-mono text-xs text-foreground">
+                        {cliStatus?.path || '~/.local/bin/hermes'}
+                      </code>
+                    </div>
+                  )}
+                  {(cliStatus?.version || hermesStatus.cli_version) && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Tag className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">hermes 版本</span>
+                      <code className="ml-auto font-mono text-xs text-emerald-400">
+                        {cliStatus?.version || hermesStatus.cli_version}
+                      </code>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-2 mt-3">
                     {[

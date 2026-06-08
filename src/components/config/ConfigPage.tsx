@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileCode, Save, RefreshCw, FileText, Lock } from 'lucide-react';
+import { Save, RefreshCw, FileText, Lock } from 'lucide-react';
 import { api, type FullConfig } from '../../lib/api';
 
 export function ConfigPage() {

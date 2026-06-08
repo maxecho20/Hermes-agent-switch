@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ChevronRight, CheckCircle2, AlertCircle, RefreshCw, Key,
-  Settings2, Save, Trash2, BookmarkPlus, Edit3
+  Save, Trash2, BookmarkPlus, Edit3
 } from 'lucide-react';
 import {
   api, type ModelConfig, type ProviderPreset, type ProviderSwitchRequest,

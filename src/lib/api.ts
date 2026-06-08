@@ -12,6 +12,21 @@ export interface HermesStatus {
   has_skills: boolean;
   has_memory: boolean;
   has_sessions: boolean;
+  cli_available: boolean;
+  cli_version: string | null;
+}
+
+export interface HermesCLIStatus {
+  available: boolean;
+  version: string | null;
+  path: string | null;
+}
+
+export interface InstallProgress {
+  step: string;
+  message: string;
+  done: boolean;
+  success: boolean;
 }
 
 export interface ModelConfig {
@@ -150,4 +165,14 @@ export const api = {
 
   getSkillsList: () =>
     invoke<string[]>('get_skills_list'),
+
+  // Hermes CLI management
+  checkHermesCli: () =>
+    invoke<HermesCLIStatus>('check_hermes_cli'),
+
+  getHermesVersion: () =>
+    invoke<string>('get_hermes_version'),
+
+  installHermesAgent: () =>
+    invoke<string>('install_hermes_agent'),
 };
