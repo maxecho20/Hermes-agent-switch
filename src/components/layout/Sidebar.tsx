@@ -54,12 +54,10 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
     <aside className="glass-sidebar w-56 flex flex-col h-full" data-tauri-drag-region>
       {/* Logo / Title */}
       <div className="px-4 py-5 flex items-center gap-3" data-tauri-drag-region>
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
-          <span className="text-white text-sm font-bold">H</span>
-        </div>
+        <img src="/logo.png" className="w-8 h-8 rounded-lg object-cover shadow-lg shadow-primary/10 border border-border/20" alt="Logo" />
         <div>
           <h1 className="text-sm font-bold text-foreground">Hermes Switch</h1>
-          <p className="text-[10px] text-muted-foreground">v0.1.0</p>
+          <p className="text-[10px] text-muted-foreground">v0.1.2</p>
         </div>
       </div>
 
