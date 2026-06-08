@@ -108,6 +108,12 @@ npx tauri build
 
 ---
 
+## 💖 鸣谢与推荐
+
+特别感谢 **CC-Switch** 为本项目提供的灵感与设计启发。如果您正在寻找一款优秀的配置与环境切换工具，我们强烈推荐您了解并使用 **CC-Switch**！
+
+---
+
 ## 📄 License
 
 MIT License
