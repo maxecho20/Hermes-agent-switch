@@ -57,7 +57,7 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
         <img src="/logo.png" className="w-8 h-8 rounded-lg object-cover shadow-lg shadow-primary/10 border border-border/20" alt="Logo" />
         <div>
           <h1 className="text-sm font-bold text-foreground">Hermes Switch</h1>
-          <p className="text-[10px] text-muted-foreground">v0.1.2</p>
+          <p className="text-[10px] text-muted-foreground">v0.1.3</p>
         </div>
       </div>
 
