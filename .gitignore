@@ -32,3 +32,8 @@ src-tauri/Cargo.lock
 .env.*
 !.env.example
 
+# Built Apps
+*.app
+*.dmg
+
+
